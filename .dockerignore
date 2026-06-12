@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+.env
+.codex/
+.git/
+.gitignore
+README.md
+systemd/
+Ollama.bak

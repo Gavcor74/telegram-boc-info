@@ -1,0 +1,17 @@
+[Unit]
+Description=AGENTE BOC Telegram bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/agente-boc
+EnvironmentFile=/opt/agente-boc/.env
+ExecStart=/opt/agente-boc/.venv/bin/python -m agente_boc
+Restart=always
+RestartSec=5
+User=agente-boc
+Group=agente-boc
+
+[Install]
+WantedBy=multi-user.target
