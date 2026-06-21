@@ -1,4 +1,4 @@
-const TELEGRAM_BOT_TOKEN = clean(process.env.TELEGRAM_BOT_TOKEN);
+const TELEGRAM_BOT_TOKEN = clean(process.env.TELEGRAM_BOT_TOKEN || process.env.TOKEN);
 const TARGET_ICAO = clean(process.env.TARGET_ICAO || 'LEMO').toUpperCase();
 const HTTP_USER_AGENT = clean(process.env.HTTP_USER_AGENT || 'AGENTE-BOC/1.0');
 const AI_PROVIDER = clean(process.env.AI_PROVIDER || 'anthropic').toLowerCase();
