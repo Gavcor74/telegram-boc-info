@@ -246,17 +246,24 @@ export function formatMeteo(raw, icao = TARGET_ICAO) {
   const lines = String(raw || '').split('\n').map((line) => line.trim()).filter(Boolean);
   const metar = (lines.find((line) => line.startsWith('METAR:')) || '').split(':').slice(1).join(':').trim();
   const taf = (lines.find((line) => line.startsWith('TAF:')) || '').split(':').slice(1).join(':').trim();
-  const out = [`METEO ${icao}`];
-  if (metar) out.push('', 'METAR bruto:', metar, '', 'Lectura rapida:', describeMetar(metar));
-  if (taf) out.push('', 'TAF bruto:', taf);
+  const out = [
+    `METEO ${icao}`,
+    '',
+    'Resumen operativo de METEO desde AviationWeather. Lectura rapida y prudente, no sustituye briefing oficial.',
+  ];
+  if (metar) {
+    out.push('', `${EMOJI.plane} Estado actual`, metar, '', `${EMOJI.info} Lectura rapida`, describeMetar(metar));
+  }
+  if (taf) {
+    out.push('', `${EMOJI.warning} Pronostico TAF`, taf);
+  }
   if (!metar && !taf) out.push('', 'Sin datos meteorologicos disponibles.');
   return out.join('\n');
 }
-
 function buildRefinePrompt(kind, text) {
   return kind === 'NOTAM'
     ? `Revisa este resumen operativo de NOTAM para ${TARGET_ICAO}. Manten el formato, no inventes datos, no cambies codigos/fechas/unidades. Mejora solo la claridad en espanol y conserva la frase de que no es texto legal completo.\n\n${text}`
-    : `Interpreta esta METEO aeronautica para ${TARGET_ICAO} en espanol claro. Mantiene METAR/TAF brutos, no inventes datos, no cambies numeros/unidades. Anade solo lectura operativa prudente.\n\n${text}`;
+    : `Reescribe esta METEO aeronautica para ${TARGET_ICAO} con estilo Telegram tipo ficha operativa, similar a NOTAM: titulo METEO LEMO, una frase breve de contexto, secciones con emojis, guiones simples y frases cortas. PROHIBIDO usar Markdown: nada de #, ##, **, triple comillas ni bloques de codigo. Manten METAR/TAF brutos, no inventes datos, no cambies numeros/unidades. Anade solo lectura operativa prudente.\n\n${text}`;
 }
 
 async function callAnthropic(prompt) {
