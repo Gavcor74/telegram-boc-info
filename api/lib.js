@@ -1,9 +1,15 @@
 const TELEGRAM_BOT_TOKEN = clean(process.env.TELEGRAM_BOT_TOKEN);
 const TARGET_ICAO = clean(process.env.TARGET_ICAO || 'LEMO').toUpperCase();
 const HTTP_USER_AGENT = clean(process.env.HTTP_USER_AGENT || 'AGENTE-BOC/1.0');
+const AI_PROVIDER = clean(process.env.AI_PROVIDER || 'anthropic').toLowerCase();
 const ANTHROPIC_API_KEY = clean(process.env.ANTHROPIC_API_KEY);
 const ANTHROPIC_BASE_URL = clean(process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/$/, '');
 const ANTHROPIC_MODEL = clean(process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5');
+const OPENAI_COMPAT_API_KEY = clean(process.env.OPENAI_COMPAT_API_KEY || process.env.OPENROUTER_API_KEY || process.env.DEEPSEEK_API_KEY);
+const OPENAI_COMPAT_BASE_URL = clean(process.env.OPENAI_COMPAT_BASE_URL || (process.env.DEEPSEEK_API_KEY ? 'https://api.deepseek.com' : 'https://openrouter.ai/api/v1')).replace(/\/$/, '');
+const OPENAI_COMPAT_MODEL = clean(process.env.OPENAI_COMPAT_MODEL || process.env.OPENROUTER_MODEL || process.env.DEEPSEEK_MODEL || 'qwen/qwen3-235b-a22b:free');
+const OPENAI_COMPAT_REFERER = clean(process.env.OPENAI_COMPAT_REFERER || 'https://telegram-boc-info.vercel.app');
+const OPENAI_COMPAT_TITLE = clean(process.env.OPENAI_COMPAT_TITLE || 'AGENTE BOC');
 const MAX_TOKENS = Number(process.env.MAX_TOKENS || 900);
 const NOTAM_SOURCE_TEXT = clean(process.env.NOTAM_SOURCE_TEXT || '');
 const METEO_SOURCE_TEXT = clean(process.env.METEO_SOURCE_TEXT || '');
@@ -247,11 +253,14 @@ export function formatMeteo(raw, icao = TARGET_ICAO) {
   return out.join('\n');
 }
 
-async function refineWithAnthropic(kind, text) {
-  if (!ANTHROPIC_API_KEY) return text;
-  const prompt = kind === 'NOTAM'
+function buildRefinePrompt(kind, text) {
+  return kind === 'NOTAM'
     ? `Revisa este resumen operativo de NOTAM para ${TARGET_ICAO}. Manten el formato, no inventes datos, no cambies codigos/fechas/unidades. Mejora solo la claridad en espanol y conserva la frase de que no es texto legal completo.\n\n${text}`
     : `Interpreta esta METEO aeronautica para ${TARGET_ICAO} en espanol claro. Mantiene METAR/TAF brutos, no inventes datos, no cambies numeros/unidades. Anade solo lectura operativa prudente.\n\n${text}`;
+}
+
+async function callAnthropic(prompt) {
+  if (!ANTHROPIC_API_KEY) return null;
   const response = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
     method: 'POST',
     headers: {
@@ -268,19 +277,54 @@ async function refineWithAnthropic(kind, text) {
     }),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) return text;
-  const output = (data.content || []).filter((block) => block.type === 'text').map((block) => block.text).join('').trim();
-  return output || text;
+  if (!response.ok) return null;
+  return (data.content || []).filter((block) => block.type === 'text').map((block) => block.text).join('').trim();
 }
 
+async function callOpenAICompatible(prompt) {
+  if (!OPENAI_COMPAT_API_KEY) return null;
+  const response = await fetch(`${OPENAI_COMPAT_BASE_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${OPENAI_COMPAT_API_KEY}`,
+      'content-type': 'application/json',
+      'http-referer': OPENAI_COMPAT_REFERER,
+      'x-title': OPENAI_COMPAT_TITLE,
+    },
+    body: JSON.stringify({
+      model: OPENAI_COMPAT_MODEL,
+      temperature: 0,
+      max_tokens: MAX_TOKENS,
+      messages: [
+        { role: 'system', content: 'Eres un asistente de operaciones aeronauticas. No inventas datos. Eres claro, prudente y conciso.' },
+        { role: 'user', content: prompt },
+      ],
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) return null;
+  return data.choices?.[0]?.message?.content?.trim() || null;
+}
+
+async function refineWithAI(kind, text) {
+  const prompt = buildRefinePrompt(kind, text);
+  try {
+    const output = AI_PROVIDER === 'openai-compatible'
+      ? await callOpenAICompatible(prompt)
+      : await callAnthropic(prompt);
+    return output || text;
+  } catch {
+    return text;
+  }
+}
 export async function buildMeteoMessage() {
   const raw = await getMeteoRaw(TARGET_ICAO);
-  return refineWithAnthropic('METEO', formatMeteo(raw, TARGET_ICAO));
+  return refineWithAI('METEO', formatMeteo(raw, TARGET_ICAO));
 }
 
 export async function buildNotamsMessage() {
   const raw = await getNotamsRaw(TARGET_ICAO);
-  return refineWithAnthropic('NOTAM', formatNotams(raw, TARGET_ICAO));
+  return refineWithAI('NOTAM', formatNotams(raw, TARGET_ICAO));
 }
 
 export async function telegram(method, payload) {
@@ -305,7 +349,9 @@ export function statusMessage() {
   return [
     'AGENTE BOC activo en Vercel.',
     `ICAO objetivo: ${TARGET_ICAO}`,
+    `AI provider: ${AI_PROVIDER}`,
     `Anthropic: ${ANTHROPIC_API_KEY ? 'configurado' : 'sin configurar'}`,
+    `OpenAI-compatible: ${OPENAI_COMPAT_API_KEY ? OPENAI_COMPAT_MODEL : 'sin configurar'}`,
     'Comandos: /meteo /notams /status',
   ].join('\n');
 }
