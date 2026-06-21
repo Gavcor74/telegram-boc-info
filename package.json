@@ -1,0 +1,12 @@
+{
+  "name": "telegram-boc-info",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "check": "node --check api/telegram.js && node --check api/lib.js && node --check api/setup-webhook.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
